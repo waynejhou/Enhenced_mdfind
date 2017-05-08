@@ -7,18 +7,61 @@
 //
 
 #include <iostream>
-#include <string>
 #include <sstream>
-#include <ncurses.h>
+#include <string>
+#include <ncursesw/ncurses.h>
 #include <vector>
 #include <array>
-
+#include <locale.h>
+#include <regex>
 
 using namespace std;
 
+class fobject{
+private:
+    string _fullpath;
+    string _name;
+    string _path;
+    regex re;
+public:
+    fobject( string );
+    void open_me();
+    void open_path();
+    string get_name();
+    string get_path();
+    string get_fullpath();
+};
+fobject::fobject( string p ){
+    _fullpath = p;
+    size_t pos = p.find_last_of("/\\");
+    re = regex(R"(\/Users\/[^\/]+\/)");
+    _path = p.substr(0,pos+1);
+    _name = p.substr(pos+1);
+}
+void fobject::open_me(){
+    string cmd = "open ";
+    cmd.append(regex_replace (_fullpath,regex(R"( )"),"\\ "));
+    shared_ptr<FILE> pipe(popen((char*)cmd.c_str(), "r"), pclose);
+}
+void fobject::open_path(){
+    string cmd = "open ";
+    cmd.append(_path);
+    shared_ptr<FILE> pipe(popen((char*)cmd.c_str(), "r"), pclose);
+}
+string fobject::get_name(){
+    return _name;
+}
+string fobject::get_path(){
+    return regex_replace(_path,re,"~/");;
+}
+string fobject::get_fullpath(){
+    return regex_replace (_fullpath,re,"~/");;
+}
+
+
 int init_x = 0;
 int init_y = 0;
-vector<string> result_stream;
+vector<fobject> result_stream;
 string args;
 void initial_cmode();
 void cmode();
@@ -26,41 +69,37 @@ void mdfind( string );
 void open_file( string );
 
 int main(int argc, const char * argv[]) {
-    if(argc==1){
-        char ccc[] = "mdfind";
-        char* cmd = strcat(ccc, args.c_str());
-        array<char, 128> buffer;
-        string result;
-        shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
-        if (!pipe) throw runtime_error("popen() failed!");
-        while (!feof(pipe.get())) {
-            if (fgets(buffer.data(), 128, pipe.get()) != NULL)
-                result += buffer.data();
+    cout << *(localeconv())->currency_symbol <<endl;
+    string cmd = "mdfind";
+    for(int i = 1 ; i < argc ; i++){
+        cmd.append(" ");
+        cmd.append(argv[i]);
+    }
+    shared_ptr<FILE> pipe(popen(cmd.c_str(), "r"), pclose);
+    array<char, 128> buffer;
+    string result;
+    while(!feof(pipe.get())){
+        if(fgets(buffer.data(), 128, pipe.get())!=NULL)
+            result += buffer.data();
+    }
+    if(argc<=1)
+        cout << result;
+    else{
+        stringstream ss;
+        ss << result.c_str();
+        string t;
+        while( getline(ss, t) ){
+            result_stream.push_back( fobject( t ) ) ;
         }
-        cout << result ;
-        return 0;
-    }
-    for( int i = 1 ; i < argc ; i++){
-        args.append(" ");
-        args.append(argv[i]);
-    }
-    mdfind(args);
-    /*cout << result_stream.size() << endl;
-    for( int i = 0 ; i < result_stream.size() ; i++){
-        cout << result_stream[i] << endl;
-    }*/
-    if( result_stream.size()==0 ){
-        cout << "Nothing Found!!\n";
-    }else if( result_stream.size()==1 ){
-        open_file(result_stream[0]);
-    }else{
         initial_cmode();
         cmode();
     }
+
     return 0;
 }
 
 void initial_cmode(){       // call many ncursres func to initial cmode(curses mode)
+    setlocale(LC_ALL,"");
     initscr();              // start cmode
     cbreak();               // All char will be load to buffer except DELETE and CTRL until new line or return in older version use crmode() & nocrmode()
                             // close with nocbreak()
@@ -82,7 +121,6 @@ void cmode(){
     bool quit = false;
     char num[10];
     do{
-        //box(stdscr, '|','-');
         mvaddstr(init_y, init_x, args.c_str());
         char s[10];
         sprintf(s, "%d", (int)result_stream.size());
@@ -98,23 +136,23 @@ void cmode(){
                 addstr(num);
                 if( head_item+i == select_item){
                     attron(A_REVERSE);
-                    addstr( result_stream[head_item+i].c_str());
+                    addstr( (char*)result_stream[head_item+i].get_fullpath().c_str() );
                     attroff(A_REVERSE);
                 }else{
-                    addstr( result_stream[head_item+i].c_str());
-                }/*
-                if(result_stream[head_item+i].size()>COLS){
-                    i++;
-                }*/
+                    addstr( (char*)result_stream[head_item+i].get_fullpath().c_str() );
+                }
             }
         }else{
             for( int i = 0 ; i < result_stream.size() ; i++){
+                move(init_y+(i+2), init_x);
+                sprintf(num, "%d ", head_item+i);
+                addstr(num);
                 if(i==select_item){
                     attron(A_REVERSE);
-                    mvaddstr(init_y+(i+2), init_x, result_stream[i].c_str());
+                    addstr( (char*)result_stream[i].get_fullpath().c_str());
                     attroff(A_REVERSE);
                 }else{
-                    mvaddstr(init_y+(i+2), init_x, result_stream[i].c_str());
+                    addstr( (char*)result_stream[i].get_fullpath().c_str());
                 }/*
                 if(result_stream[i].size()>COLS){
                     i++;
@@ -143,7 +181,7 @@ void cmode(){
                     }
                     break;
                 case 13:
-                    open_file(result_stream[select_item]);
+                    result_stream[select_item].open_me();
                     quit = true;
                     break;
                 case 'q':
@@ -164,47 +202,6 @@ void cmode(){
     move(0,0);
     endwin();
 }
-void mdfind( string args){
-    char ccc[] = "mdfind";
-    char* cmd = strcat(ccc, args.c_str());
-    array<char, 128> buffer;
-    string result;
-    shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
-    if (!pipe) throw runtime_error("popen() failed!");
-    while (!feof(pipe.get())) {
-        if (fgets(buffer.data(), 128, pipe.get()) != NULL)
-            result += buffer.data();
-    }
-    string t;
-    for(int i = 0 ; i < result.length() ; i++){
-        if(result[i]=='\n'){
-            //if(result[i]=='\n')
-                //cout << "[" << "\\n:"<<(int)'\n' << "]\n\n";
-            i++;
-            result_stream.push_back(t);
-            t.clear();
-        }{
-            //cout << "[" << result[i]<<":"<<(int)result[i] << "]";
-            t.push_back(result[i]);
-        }
-    }
-    /*
-    stringstream ss;
-    ss << result << EOF;
-    string t;
-    while(getline(ss,t)){
-        cout << "mdssl\n";
-        result_stream.push_back(t);
-    }
-    cout << ss.str();
-     */
-}
-void open_file( string file ){
-    char sss[4096] = "open \"";
-    char ssse[] = "\"";
-    strcat(sss, file.c_str());
-    strcat(sss, ssse);
-    //addstr( sss );
-    //getch();
-    shared_ptr<FILE> pipe(popen(sss, "r"), pclose);
+int show_mes(){
+    return 1;
 }
