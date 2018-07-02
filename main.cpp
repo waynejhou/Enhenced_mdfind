@@ -17,84 +17,69 @@
 
 using namespace std;
 
-class fobject{
+class FileInfo{
 private:
     string _fullpath;
     string _name;
     string _path;
     regex re;
 public:
-    fobject( string );
-    void open_me();
-    void open_path();
-    string get_name();
-    string get_path();
-    string get_fullpath();
+    FileInfo( string );
+    void OpenMe();
+    void OpenPath();
+    string GetName();
+    string GetPath();
+    string GetFullPath();
 };
-fobject::fobject( string p ){
-    _fullpath = p;
-    size_t pos = p.find_last_of("/\\");
+FileInfo::FileInfo( string path ){
+    _fullpath = path;
+    size_t pos = path.find_last_of("/\\");
     re = regex(R"(\/Users\/[^\/]+\/)");
-    _path = p.substr(0,pos+1);
-    _name = p.substr(pos+1);
+    _path = path.substr(0,pos+1);
+    _name = path.substr(pos+1);
 }
-void fobject::open_me(){
+void FileInfo::OpenMe(){
     string cmd = "open ";
     cmd.append(regex_replace (_fullpath,regex(R"( )"),"\\ "));
     shared_ptr<FILE> pipe(popen((char*)cmd.c_str(), "r"), pclose);
 }
-void fobject::open_path(){
+void FileInfo::OpenPath(){
     string cmd = "open ";
     cmd.append(_path);
     shared_ptr<FILE> pipe(popen((char*)cmd.c_str(), "r"), pclose);
 }
-string fobject::get_name(){
+string FileInfo::GetName(){
     return _name;
 }
-string fobject::get_path(){
+string FileInfo::GetPath(){
     return regex_replace(_path,re,"~/");;
 }
-string fobject::get_fullpath(){
+string FileInfo::GetFullPath(){
     return regex_replace (_fullpath,re,"~/");;
 }
 
 
-int init_x = 0;
-int init_y = 0;
-vector<fobject> result_stream;
-string args;
 void initial_cmode();
 void cmode();
-void mdfind( string );
-void open_file( string );
+vector<FileInfo> mdfind( string );
+vector<FileInfo> ResultFiles;
+
+string arguments="";
 
 int main(int argc, const char * argv[]) {
-    cout << *(localeconv())->currency_symbol <<endl;
-    string cmd = "mdfind";
-    for(int i = 1 ; i < argc ; i++){
-        cmd.append(" ");
-        cmd.append(argv[i]);
-    }
-    shared_ptr<FILE> pipe(popen(cmd.c_str(), "r"), pclose);
-    array<char, 128> buffer;
-    string result;
-    while(!feof(pipe.get())){
-        if(fgets(buffer.data(), 128, pipe.get())!=NULL)
-            result += buffer.data();
-    }
-    if(argc<=1)
-        cout << result;
-    else{
-        stringstream ss;
-        ss << result.c_str();
-        string t;
-        while( getline(ss, t) ){
-            result_stream.push_back( fobject( t ) ) ;
-        }
-        initial_cmode();
-        cmode();
+    if(argc<=1){
+        system("mdfind");
+        return 0;
     }
 
+    for(int i = 1 ; i < argc ; i++){
+        arguments.append(argv[i]);
+        if(i!=argc-1)
+            arguments.append(" ");
+    }
+    ResultFiles = mdfind(arguments);
+    initial_cmode();
+    cmode();
     return 0;
 }
 
@@ -113,88 +98,81 @@ void initial_cmode(){       // call many ncursres func to initial cmode(curses m
                             // trans special key (e.g. arrow key) into special key in function with "KEY_" ahead.
     //refresh();              // refresh treminal. at first it clean the screen.
 }
+const int init_x = 0;
+const int init_y = 0;
+int offset_y = 0;
 void cmode(){
-    //char ch = 0;
-    vector<char> vc;
+    vector<char> pressedKey;
     int head_item = 0;
     int select_item = 0;
     bool quit = false;
     char num[10];
     do{
-        mvaddstr(init_y, init_x, args.c_str());
-        char s[10];
-        sprintf(s, "%d", (int)result_stream.size());
-        mvaddstr(init_y+1, init_x, s);
-        addstr(" things found");
-        if( LINES < result_stream.size()) {
-            for( int i = 0 ; i < LINES-2 ; i++){
-                if(head_item+i>result_stream.size()-1){
+        string resultText =
+        "search [" + arguments + "] " +
+        "got "+to_string((int)ResultFiles.size()) + " results.";
+        mvaddstr(init_y, init_x, resultText.c_str());
+        offset_y=1;
+        if( LINES < ResultFiles.size()) {
+            for( int i = 0 ; i < LINES-1 ; i++){
+                if(head_item + i >= ResultFiles.size()){
                     break;
                 }
-                move(init_y+(i+2), init_x);
-                sprintf(num, "%d ", head_item+i);
-                addstr(num);
+                move(init_y+(i+offset_y), init_x);
+                addstr((to_string(head_item+i)+" ").c_str());
                 if( head_item+i == select_item){
                     attron(A_REVERSE);
-                    addstr( (char*)result_stream[head_item+i].get_fullpath().c_str() );
+                    addstr( (char*)ResultFiles[head_item+i].GetFullPath().c_str() );
                     attroff(A_REVERSE);
                 }else{
-                    addstr( (char*)result_stream[head_item+i].get_fullpath().c_str() );
+                    addstr( (char*)ResultFiles[head_item+i].GetFullPath().c_str() );
                 }
             }
         }else{
-            for( int i = 0 ; i < result_stream.size() ; i++){
-                move(init_y+(i+2), init_x);
-                sprintf(num, "%d ", head_item+i);
-                addstr(num);
+            for( int i = 0 ; i < ResultFiles.size() ; i++){
+                move(init_y+(i+offset_y), init_x);
+                addstr((to_string(head_item+i)+" ").c_str());
                 if(i==select_item){
                     attron(A_REVERSE);
-                    addstr( (char*)result_stream[i].get_fullpath().c_str());
+                    addstr( (char*)ResultFiles[i].GetFullPath().c_str() );
                     attroff(A_REVERSE);
                 }else{
-                    addstr( (char*)result_stream[i].get_fullpath().c_str());
-                }/*
-                if(result_stream[i].size()>COLS){
-                    i++;
-                }*/
+                    addstr( (char*)ResultFiles[i].GetFullPath().c_str());
+                }
             }
         }
         do{
             char ch = getch();
-            vc.push_back(ch);
+            pressedKey.push_back(ch);
         }while(feof(stdin));
-        //char t[10];
-        //sprintf(t,"%d",(int)vc[0]);
-        //addstr(t);
-        for(int i = 0 ; i < vc.size() ; i ++){
-            switch (vc[i]) {
-                case 3:
-                    select_item=max(min(--select_item,(int)result_stream.size()-1),0);
-                    if(select_item - head_item <=2){
-                        head_item=max(min(head_item-1,(int)result_stream.size()-1),0);
+        
+        for(int i = 0 ; i < pressedKey.size() ; i ++){
+            switch (pressedKey[i]) {
+                case 3: //down
+                    select_item=max(min(--select_item,(int)ResultFiles.size()-1),0);
+                    if(select_item - head_item <=1){
+                        head_item=max(min(head_item-1,(int)ResultFiles.size()-1),0);
                     }
                     break;
-                case 2:
-                    select_item=max(min(++select_item,(int)result_stream.size()-1),0);
-                    if(select_item - head_item >=LINES-5){
-                        head_item=max(min(head_item+1,(int)result_stream.size()-1),0);
+                case 2: //up
+                    select_item=max(min(++select_item,(int)ResultFiles.size()-1),0);
+                    if(select_item - head_item >=LINES-(LINES/5)) {
+                        head_item=max(min(head_item+1,(int)ResultFiles.size()-1),0);
                     }
                     break;
                 case 13:
-                    result_stream[select_item].open_me();
+                    ResultFiles[select_item].OpenMe();
                     quit = true;
                     break;
                 case 'q':
                     quit = true;
                     break;
                 default:
-                    //addstr(&vc[i]);
-                    //addstr(", ");
-                    vc.clear();
+                    pressedKey.clear();
                     break;
             }
         }
-        vc.clear();
+        pressedKey.clear();
         clear();
         if(quit)
             break;
@@ -204,4 +182,23 @@ void cmode(){
 }
 int show_mes(){
     return 1;
+}
+vector<FileInfo> mdfind( string arguments ){
+    string cmd = "mdfind ";
+    cmd.append(arguments);
+    shared_ptr<FILE> pipe(popen(cmd.c_str(), "r"), pclose);
+    array<char, 128> buffer;
+    string result;
+    while(!feof(pipe.get())){
+        if(fgets(buffer.data(), 128, pipe.get())!=NULL)
+            result += buffer.data();
+    }
+    stringstream ss;
+    ss << result.c_str();
+    string t;
+    vector<FileInfo> ret;
+    while( getline(ss, t) ){
+        ret.push_back( FileInfo( t ) ) ;
+    }
+    return ret;
 }
