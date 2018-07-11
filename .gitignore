@@ -1,3 +1,4 @@
 bin/*
 .vscode/*
 exec_me.sh
+.DS_Store
