@@ -211,7 +211,7 @@ void cmode()
                 if (i == select_item)
                 {
                     attron(A_REVERSE);
-                    addstr((char *)ResultFiles[i].GetFullPath().c_str());
+                    addstr((char *)ResultFiles[i].GetShrinkPath().c_str());
                     attroff(A_REVERSE);
                 }
                 else
