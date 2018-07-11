@@ -1,4 +1,4 @@
-//
+///
 //  main.cpp
 //  Enhenced_mdfind
 //
@@ -17,31 +17,54 @@
 
 using namespace std;
 
+
+int CheckBoundary(int , int , int);
 class FileInfo
 {
   private:
     string _fullpath;
     string _name;
-    string _path;
-    regex re;
-    int shrinkMaxLevel;
-
+    string _dir;
+    regex regexUser;
+    regex regexSlash;
+    int maxShrinkLevel;
+    int nowShrinkLevel;
+    vector<string> slashMatchResult;
   public:
     FileInfo(string);
     void OpenMe();
     void OpenPath();
     string GetName();
-    string GetPath();
+    string GetDirectory();
     string GetFullPath();
-    string GetShrinkPath(int);
+    string GetShrinkPath();
+    void AddShrinkLevel();
+    void SubShrinkLevel();
+    int GetShrinkMaxLevel();
 };
 FileInfo::FileInfo(string path)
 {
     _fullpath = path;
     size_t pos = path.find_last_of("/\\");
-    re = regex(R"(\/Users\/[^\/]+\/)");
-    _path = path.substr(0, pos + 1);
+    _dir = path.substr(0, pos + 1);
     _name = path.substr(pos + 1);
+    string username = string(getenv("USER"));
+    regexUser = regex(R"(^\/Users\/)"+username+R"(\/)");
+
+    _fullpath = regex_replace(_fullpath, regexUser, "~/");
+    _dir= regex_replace(_dir, regexUser, "~/");
+
+    regexSlash = regex(R"(\/[^\/]+)");
+    smatch sm;
+    int count = 0;
+    string input = _fullpath;
+    while( regex_search(input, sm, regexSlash) ){
+      ++count;
+      slashMatchResult.push_back(sm[0]);
+      input = sm.suffix().str();
+    }
+    maxShrinkLevel = slashMatchResult.size();
+    nowShrinkLevel = 0;
 }
 void FileInfo::OpenMe()
 {
@@ -52,22 +75,42 @@ void FileInfo::OpenMe()
 void FileInfo::OpenPath()
 {
     string cmd = "open ";
-    cmd.append(_path);
+    cmd.append(_dir);
     shared_ptr<FILE> pipe(popen((char *)cmd.c_str(), "r"), pclose);
 }
 string FileInfo::GetName()
 {
     return _name;
 }
-string FileInfo::GetPath()
+string FileInfo::GetDirectory()
 {
-    return regex_replace(_path, re, "~/");
-    ;
+    return _fullpath;
 }
 string FileInfo::GetFullPath()
 {
-    return regex_replace(_fullpath, re, "~/");
+    return _fullpath;
     ;
+}
+string FileInfo::GetShrinkPath(){
+    string ret = _fullpath;
+    for(int i = 0 ; i < nowShrinkLevel ; i ++){
+        string result = slashMatchResult[i];
+        ret = ret.replace(
+            ret.find(result),
+            result.length(),
+            result.substr(0,5));
+    }
+    return ret;
+}
+int FileInfo::GetShrinkMaxLevel(){;
+    return maxShrinkLevel;
+}
+
+void FileInfo::AddShrinkLevel(){
+    nowShrinkLevel = CheckBoundary(nowShrinkLevel+1,maxShrinkLevel,0);
+}
+void FileInfo::SubShrinkLevel(){
+    nowShrinkLevel = CheckBoundary(nowShrinkLevel-1,maxShrinkLevel,0);
 }
 
 void initial_cmode();
@@ -102,7 +145,8 @@ int main(int argc, const char *argv[])
 }
 
 void initial_cmode()
-{ // call many ncursres func to initial cmode(curses mode)
+{
+    // call many ncursres func to initial cmode(curses mode)
     setlocale(LC_ALL, "");
     initscr();                // start cmode
     cbreak();                 // All char will be load to buffer except DELETE and CTRL until new line or return in older version use crmode() & nocrmode()
@@ -143,16 +187,18 @@ void cmode()
                     break;
                 }
                 move(init_y + (i + offset_y), init_x);
-                addstr((to_string(head_item + i) + " ").c_str());
+                addstr((
+                    to_string(head_item + i) + " "
+                    ).c_str());
                 if (head_item + i == select_item)
                 {
                     attron(A_REVERSE);
-                    addstr((char *)ResultFiles[head_item + i].GetFullPath().c_str());
+                    addstr(ResultFiles[head_item + i].GetShrinkPath().c_str());
                     attroff(A_REVERSE);
                 }
                 else
                 {
-                    addstr((char *)ResultFiles[head_item + i].GetFullPath().c_str());
+                    addstr(ResultFiles[head_item + i].GetFullPath().c_str());
                 }
             }
         }
@@ -197,6 +243,12 @@ void cmode()
                 {
                     head_item = CheckBoundary(head_item + 1, resultMaxIdx, 0);
                 }
+                break;
+            case 5: //left
+                ResultFiles[select_item].AddShrinkLevel();
+                break;
+            case 4: //right
+                ResultFiles[select_item].SubShrinkLevel();
                 break;
             case 13:
                 ResultFiles[select_item].OpenMe();
